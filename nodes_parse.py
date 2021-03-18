@@ -6,7 +6,7 @@
 # @Email: xiang.hu@rwth-aachen.de
 # @Create At: 2021-03-05 10:32:50
 # @Last Modified By: Xiang Hu
-# @Last Modified At: 2021-03-09 08:27:00
+# @Last Modified At: 2021-03-17 19:25:52
 # @Description: Parse .inp file and create edges, vertices, and BCs input files.
 
 import os
@@ -59,7 +59,7 @@ class NodesParse():
 
         # match strings
         match_str = "*Node"
-        stop_str = "*Element, type=C3D8"
+        stop_str = "*Element, type="
         # parse begin and stop signals
         parse_beg = False
         parse_stp = False
@@ -111,9 +111,9 @@ class NodesParse():
                             parse_stp = True
                             continue
                         else:
-                            line_list = list(line.split(', '))
+                            line_list = list(line.split(' '))
                             line_list = [node.replace(',', '') for node in line_list]
-                            if len(line_list) != 1:
+                            if len(line_list) != 0 and line_list[0] != '':
                                 set_list.extend(line_list)
                     elif match_str in line:
                         parse_beg = True

@@ -6,7 +6,7 @@
 # @Email: xiang.hu@rwth-aachen.de
 # @Create At: 2021-02-06 10:07:44
 # @Last Modified By: Xiang Hu
-# @Last Modified At: 2021-03-14 11:34:51
+# @Last Modified At: 2021-03-16 19:40:57
 # @Description: Parse tess file and stelset file, generate input files.
 
 import os
@@ -486,5 +486,5 @@ class FileScanner():
 
 if __name__== "__main__":
 
-    dir_path = "/mnt/d/User_Hu_Xiang/Neper/Trial/cae/python_files/multi_scale_01_copy"
+    dir_path = "/mnt/d/Git/rve_pbc/multi_scale_04"
     Trial =  FileScanner(dir_path)
