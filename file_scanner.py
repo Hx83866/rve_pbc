@@ -6,12 +6,14 @@
 # @Email: xiang.hu@rwth-aachen.de
 # @Create At: 2021-02-06 10:07:44
 # @Last Modified By: Xiang Hu
-# @Last Modified At: 2021-03-16 19:40:57
+# @Last Modified At: 2021-04-07 16:29:53
 # @Description: Parse tess file and stelset file, generate input files.
 
 import os
 from grains_parse import GrainsParse
 from nodes_parse import NodesParse
+from read_hierarchical import HierarchicalRead
+from assign_ori import AssignOriToRve
 
 class FileScanner():
     """
@@ -20,7 +22,7 @@ class FileScanner():
         materials.inp, sections.inp, and periodic input files.
     """
 
-    def __init__(self, dir_path):
+    def __init__(self, dir_path, only_graindata=True, pbc=False):
         """ initialize the properties"""
 
         # get input arguments
@@ -36,7 +38,11 @@ class FileScanner():
         # file path
         self.tess_file_path = None
         self.stelset_file_path = None
+        self.stcell_file_path = None
         self.final_inp_file_path = None
+        # pass signals
+        self.only_graindata_inp = only_graindata
+        self.pbc = pbc
 
         # automatically run
         self.__files_scan()
@@ -46,31 +52,53 @@ class FileScanner():
         """ auto run """
 
         # run if files found
-        if self.tess_file_path != None and self.stelset_file_path != None:
+        if self.tess_file_path != None and \
+            self.stelset_file_path != None and self.stcell_file_path != None:
             # GrainsParse 
             grains = GrainsParse(self.tess_file_path, self.stelset_file_path)
-            self.ori_dict = grains.read_ori()
+            # Hierarch
+            hierarch = HierarchicalRead(self.stcell_file_path)
+            hierarch_dict = hierarch.read_hierarch()
+            assign = AssignOriToRve(ori_json_path="/mnt/d/Git/rve_pbc/matbank/Bainite_1300.json", hierarch_dict=hierarch_dict)
+            # assign ori_dict in Class AssignOriToRve()
+            self.ori_dict = assign.assigned_ori_dict
+            # self.ori_dict = grains.read_ori()
             self.dia_dict = grains.read_eqvdiam()
-            # NodesParse
-            nodes = NodesParse(self.final_inp_file_path)
-            self.face_nodes = nodes.faces
-            self.edge_nodes = nodes.edges
-            self.vertice_nodes = nodes.vertices
-            # write input files
-            if self.final_inp_file_path != None and self.__write_graindata():
-                self.__write_grain_input()
-                if (len(self.face_nodes) != 0) and (len(self.edge_nodes) != 0) and (len(self.vertice_nodes) != 0):
-                    self.__write_face_input()
-                    self.__write_edge_input()
-                    self.__write_corners_input()
-                    self.__write_vertice_input()
-                    self.__write_final_input()
-                else:
-                    print("\nError! No Node Information Have Been Found!\n")
+            # if only graindata.inp is required
+            if self.only_graindata_inp:
+                self.__write_graindata()
+            # otherwise
             else:
-                print("\nError! Mesh file cannot be parsed!\n\n")
+                # if periodical boundary conditions are required
+                if self.pbc:
+                    # NodesParse
+                    nodes = NodesParse(self.final_inp_file_path)
+                    self.face_nodes = nodes.faces
+                    self.edge_nodes = nodes.edges
+                    self.vertice_nodes = nodes.vertices
+                    # write input files
+                    if self.final_inp_file_path != None and self.__write_graindata():
+                        self.__write_grain_input()
+                        if (len(self.face_nodes) != 0) and (len(self.edge_nodes) != 0) and (len(self.vertice_nodes) != 0):
+                            self.__write_face_input()
+                            self.__write_edge_input()
+                            self.__write_corners_input()
+                            self.__write_vertice_input()
+                            self.__write_final_input()
+                        else:
+                            print("\nError! No Node Information Have Been Found!\n")
+                    else:
+                        print("\nError! Mesh file cannot be parsed!\n\n")
+                # otherwise
+                else:
+                    # write input rows, namely sections and materials
+                    if self.final_inp_file_path != None and self.__write_graindata():
+                        self.__write_grain_input()
+                    else:
+                        print("\nError! Mesh file cannot be parsed!\n\n")
         else:
-            print("\nError! Files not Found!\n\n")
+            print("\nError! Tess or Stelset or Stcell File cannot be Found!\n\n")
+
 
     def __files_scan(self):
         """
@@ -92,6 +120,8 @@ class FileScanner():
                             self.tess_file_path = current_file
                         elif extension == ".stelset":
                             self.stelset_file_path = current_file
+                        elif extension == ".stcell":
+                            self.stcell_file_path = current_file
                         elif file_name != "graindata" and extension == ".inp":
                             self.final_inp_file_path = current_file
                         else:
@@ -106,7 +136,7 @@ class FileScanner():
         # grain data file name
         output_file = 'graindata.inp'
         # check if the dimensions of two dictionaries are same
-        if len(list(self.ori_dict.keys())) != len(list(self.dia_dict.keys())):
+        if len(list(self.ori_dict.keys())) < len(list(self.dia_dict.keys())):
             print("\n\nError! Dictionaries Dimensions do not match!\n")
             return False
         else:
@@ -114,21 +144,25 @@ class FileScanner():
                 title = "!MMM Crystal Plasticity Input File\n\n"
                 output_file.write(title)
                 # loop all grains by index
-                for key in self.ori_dict.keys():
-                    # modify decimal
-                    eqv_diam = "%.3f" % float(self.dia_dict[key])
-                    phi_1_f = float(self.ori_dict[key]['phi1']) if float(self.ori_dict[key]['phi1']) > 0 else float(self.ori_dict[key]['phi1'])+360.0 
-                    phi_1 = "%.3f" % phi_1_f
-                    phi_f = float(self.ori_dict[key]['phi']) if float(self.ori_dict[key]['phi']) > 0 else float(self.ori_dict[key]['phi'])+360.0 
-                    phi   = "%.3f" % phi_f
-                    phi_2_f = float(self.ori_dict[key]['phi2']) if float(self.ori_dict[key]['phi2']) > 0 else float(self.ori_dict[key]['phi2'])+360.0 
-                    phi_2 = "%.3f" % phi_2_f
-                    # generate line to write
-                    to_write_line = "Grain : %(key)s : %(phi1)s : %(phi)s : %(phi2)s : %(eqv_dia)s\n" % \
-                        {"key": key, "phi1":phi_1, "phi":phi, "phi2":phi_2, "eqv_dia":eqv_diam}
-                    # write line
-                    output_file.write(to_write_line)
-            
+                for key in range(len(list(self.ori_dict.keys()))):
+                    try:
+                        key = str(key+1)
+                        # modify decimal
+                        eqv_diam = "%.3f" % float(self.dia_dict[key])
+                        phi_1_f = float(self.ori_dict[key]['phi1']) if float(self.ori_dict[key]['phi1']) > 0 else float(self.ori_dict[key]['phi1'])+360.0 
+                        phi_1 = "%.3f" % phi_1_f
+                        phi_f = float(self.ori_dict[key]['phi']) if float(self.ori_dict[key]['phi']) > 0 else float(self.ori_dict[key]['phi'])+360.0 
+                        phi   = "%.3f" % phi_f
+                        phi_2_f = float(self.ori_dict[key]['phi2']) if float(self.ori_dict[key]['phi2']) > 0 else float(self.ori_dict[key]['phi2'])+360.0 
+                        phi_2 = "%.3f" % phi_2_f
+                        # generate line to write
+                        to_write_line = "Grain : %(key)s : %(phi1)s : %(phi)s : %(phi2)s : %(eqv_dia)s\n" % \
+                            {"key": key, "phi1":phi_1, "phi":phi, "phi2":phi_2, "eqv_dia":eqv_diam}
+                        # write line
+                        output_file.write(to_write_line)
+                    except KeyError:
+                        print("\n\nWarning! Ori-Dictionary does not match Diameter Dictionary!\n")
+                        pass
             return True
 
     def __write_grain_input(self):

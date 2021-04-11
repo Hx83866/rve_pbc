@@ -6,7 +6,7 @@
 # @Email: xiang.hu@rwth-aachen.de
 # @Create At: 2021-02-06 10:07:44
 # @Last Modified By: Xiang Hu
-# @Last Modified At: 2021-03-09 10:06:33
+# @Last Modified At: 2021-03-28 17:15:05
 # @Description: Parse tess file and stelset file, generate input files.
 
 import os
@@ -26,9 +26,6 @@ class GrainsParse():
         # containers
         self.ori_dict = {}
         self.dia_dict = {}
-        # auto run
-        self.read_ori()
-        self.read_eqvdiam()
 
     def read_ori(self):
         """
