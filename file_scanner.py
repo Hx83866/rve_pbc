@@ -6,7 +6,7 @@
 # @Email: xiang.hu@rwth-aachen.de
 # @Create At: 2021-02-06 10:07:44
 # @Last Modified By: Xiang Hu
-# @Last Modified At: 2021-04-07 16:29:53
+# @Last Modified At: 2021-05-31 20:22:18
 # @Description: Parse tess file and stelset file, generate input files.
 
 import os
@@ -22,7 +22,7 @@ class FileScanner():
         materials.inp, sections.inp, and periodic input files.
     """
 
-    def __init__(self, dir_path, only_graindata=True, pbc=False):
+    def __init__(self, dir_path, load_condition, only_graindata=True, pbc=False, hierarchical_ori=True):
         """ initialize the properties"""
 
         # get input arguments
@@ -43,6 +43,8 @@ class FileScanner():
         # pass signals
         self.only_graindata_inp = only_graindata
         self.pbc = pbc
+        self.loading_condition = load_condition
+        self.hierarchical_ori = hierarchical_ori
 
         # automatically run
         self.__files_scan()
@@ -56,13 +58,16 @@ class FileScanner():
             self.stelset_file_path != None and self.stcell_file_path != None:
             # GrainsParse 
             grains = GrainsParse(self.tess_file_path, self.stelset_file_path)
-            # Hierarch
-            hierarch = HierarchicalRead(self.stcell_file_path)
-            hierarch_dict = hierarch.read_hierarch()
-            assign = AssignOriToRve(ori_json_path="/mnt/d/Git/rve_pbc/matbank/Bainite_1300.json", hierarch_dict=hierarch_dict)
-            # assign ori_dict in Class AssignOriToRve()
-            self.ori_dict = assign.assigned_ori_dict
-            # self.ori_dict = grains.read_ori()
+            if self.hierarchical_ori:
+                # Hierarchical Orientation from EBSD Data
+                hierarch = HierarchicalRead(self.stcell_file_path)
+                hierarch_dict = hierarch.read_hierarch()
+                assign = AssignOriToRve(ori_json_path="/mnt/d/Git/rve_pbc/matbank/Bainite_1300.json", hierarch_dict=hierarch_dict)
+                # assign ori_dict in Class AssignOriToRve()
+                self.ori_dict = assign.assigned_ori_dict
+            else:
+                # Random Orientation from Neper
+                self.ori_dict = grains.read_ori()
             self.dia_dict = grains.read_eqvdiam()
             # if only graindata.inp is required
             if self.only_graindata_inp:
@@ -151,10 +156,13 @@ class FileScanner():
                         eqv_diam = "%.3f" % float(self.dia_dict[key])
                         phi_1_f = float(self.ori_dict[key]['phi1']) if float(self.ori_dict[key]['phi1']) > 0 else float(self.ori_dict[key]['phi1'])+360.0 
                         phi_1 = "%.3f" % phi_1_f
+                        # phi_1 = "197.0"
                         phi_f = float(self.ori_dict[key]['phi']) if float(self.ori_dict[key]['phi']) > 0 else float(self.ori_dict[key]['phi'])+360.0 
                         phi   = "%.3f" % phi_f
+                        # phi = "143.0"
                         phi_2_f = float(self.ori_dict[key]['phi2']) if float(self.ori_dict[key]['phi2']) > 0 else float(self.ori_dict[key]['phi2'])+360.0 
                         phi_2 = "%.3f" % phi_2_f
+                        # phi_2 = "191.0"
                         # generate line to write
                         to_write_line = "Grain : %(key)s : %(phi1)s : %(phi)s : %(phi2)s : %(eqv_dia)s\n" % \
                             {"key": key, "phi1":phi_1, "phi":phi, "phi2":phi_2, "eqv_dia":eqv_diam}
@@ -454,9 +462,11 @@ class FileScanner():
             # write material section
             mesh_file.write(str(self.__material_section()))
             # write boundary conditions sections
-            mesh_file.write(str(self.__bc_section()))
+            mesh_file.write(str(self.__bc_section(loading_condition=self.loading_condition)))
             # write step section
-            mesh_file.write(str(self.__step_section()))
+            mesh_file.write(str(self.__step_section(loading_condition=self.loading_condition)))
+            # write control section
+            mesh_file.write(str(self.__control_section(loading_condition=self.loading_condition)))
             # write output section
             mesh_file.write(str(self.__output_section()))
 
@@ -480,34 +490,82 @@ class FileScanner():
         
         return material_section
 
-    def __bc_section(self):
+    def __bc_section(self, loading_condition):
         """ Generate boundary conditions as a whole section in final input file """
 
-        bc_section = \
+        # boundary conditions for Uni-Axial Tension
+        bc_section_uniaxial = \
             "**\n**BOUNDARY CONDITIONS\n**\n" +\
                 "** Name: H1 Type: Displacement/Rotation\n*Boundary \nH1, 1, 1 \nH1, 2, 2 \n" +\
                     "** Name: V1 Type: Displacement/Rotation\n*Boundary \nV1, 1, 1 \nV1, 2, 2 \nV1, 3, 3 \n" +\
                         "** Name: V2 Type: Displacement/Rotation\n*Boundary \nV2, 2, 2 \nV2, 3, 3 \n" +\
                             "** Name: V4 Type: Displacement/Rotation\n*Boundary \nV4, 1, 1 \nV4, 3, 3 \n"
+        # boundary conditions for Cyclic loading
+        bc_section_cyc = \
+            "** Include Amplitude for simulations with 35Hz loading\n" +\
+                "**\n*Include, Input=Amplitude.inp\n" +\
+                    "**\n**BOUNDARY CONDITIONS\n**\n" +\
+                        "** Name: BC-1 Type: Symmetry/Antisymmetry/Encastre\n*Boundary \nV1, ENCASTRE \n" +\
+                            "** Name: Name: BC-2 Type: Displacement/Rotation\n*Boundary \n" +\
+                                "V4, 1, 1\nV4, 3, 3\nV4, 4, 4\nV4, 5, 5\nV4, 6, 6\n" +\
+                                    "V2, 3, 3\n"
         
-        return bc_section
+        if str(loading_condition) == "uni_axial":
+            return bc_section_uniaxial
+        elif str(loading_condition) == "cyclic":
+            return bc_section_cyc
+        else:
+            return None
 
-    def __step_section(self):
+    def __step_section(self, loading_condition):
         """
             Generate step, as well as boundary condition, 
             as a whole section in final input file.
         """
 
-        step_section = \
+        # Uniaxial
+        step_section_uniaxial = \
             "** ----------------------------------------------------------------\n" +\
                 "**\n** STEP: Step-1\n**\n*Step, name=Step-1, nlgeom=YES, inc=10000000\n" +\
                     "*Static\n0.0002, 4., 1e-20, 0.05\n" +\
                         "**\n** BOUNDARY CONDITIONS\n** \n** Name: Load Type: Displacement/Rotation \n" +\
-                            "*Boundary\nV2, 1, 1, 5.\n"
-        return step_section
+                            "*Boundary\nV2, 1, 1, 2.\n"
+        # Cyclic loading
+        step_section_cyc = \
+            "** ----------------------------------------------------------------\n" +\
+                "**\n** STEP: Step-1\n**\n*Step, name=Step-1, nlgeom=YES, inc=10000000, solver=ITERATIVE\n" +\
+                    "*Static\n0.001, 0.24, 1e-20, 0.01\n" +\
+                        "SOLUTION TECHNIQUE, type=QUASI-NEWTON\n" +\
+                            "**\n** BOUNDARY CONDITIONS\n** \n** Name: Load Type: Displacement/Rotation \n" +\
+                                "*Boundary, amplitude=AMP1\nV2, 1, 1, 0.6\n"
+
+        if str(loading_condition) == "uni_axial":
+            return step_section_uniaxial
+        elif str(loading_condition) == "cyclic":
+            return step_section_cyc
+        else:
+            return None
+
+    def __control_section(self, loading_condition):
+        """ Generate controls section as a whole section in final input file. """
+
+        control_section_uniaxial = \
+            "** \n** CONTROLS\n** \n*Controls, reset\n*Controls, parameters=time incrementation\n" +\
+                ", , , , , , , 200, , ,\n"
+        control_section_cyc = \
+            "** \n** CONTROLS\n** \n*Controls, reset\n*Controls, parameters=time incrementation\n" +\
+                "*Controls, ANALYSIS=DISCONTINUOUS\n"+\
+                    "10, , 20, 30, , , , 200, , ,\n"
+
+        if str(loading_condition) == "uni_axial":
+            return control_section_uniaxial
+        elif str(loading_condition) == "cyclic":
+            return control_section_cyc
+        else:
+            return None
 
     def __output_section(self):
-        """ Generate putput section as a whole section in final input file. """
+        """ Generate output section as a whole section in final input file. """
 
         output_section = \
             "**\n** OUTPUT REQUESTS\n** \n*Restart, write, frequency=0\n" +\
