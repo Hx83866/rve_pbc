@@ -6,7 +6,7 @@
 # @Email: xiang.hu@rwth-aachen.de
 # @Create At: 2021-02-06 10:07:44
 # @Last Modified By: Xiang Hu
-# @Last Modified At: 2021-05-31 20:22:18
+# @Last Modified At: 2021-07-01 11:38:36
 # @Description: Parse tess file and stelset file, generate input files.
 
 import os
@@ -537,7 +537,7 @@ class FileScanner():
                     "*Static\n0.001, 0.24, 1e-20, 0.01\n" +\
                         "SOLUTION TECHNIQUE, type=QUASI-NEWTON\n" +\
                             "**\n** BOUNDARY CONDITIONS\n** \n** Name: Load Type: Displacement/Rotation \n" +\
-                                "*Boundary, amplitude=AMP1\nV2, 1, 1, 0.6\n"
+                                "*Boundary, amplitude=AMP1\nV2, 1, 1, 0.62\n"
 
         if str(loading_condition) == "uni_axial":
             return step_section_uniaxial
